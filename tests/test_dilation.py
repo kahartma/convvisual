@@ -11,7 +11,7 @@ from numpy.random import RandomState
 from braindecode.veganlasagne.pool import SumPool2dLayer
 from braindecode.veganlasagne.nonlinearities import safe_log
 
-from layers import DilationSeparate2DLayer,DilationMerge2DLayer
+from convvisual.receptive_field.layers import DilationSeparate2DLayer,DilationMerge2DLayer
 
 def test_stride_reshape_layer():
     input_var = T.tensor4('inputs').astype(theano.config.floatX)
@@ -98,7 +98,7 @@ def test_stride_reshape_layer():
         layer_activations[5])
     
 def test_dilation_layer():
-    from convvisual import receptive_field_build_deconv_layers
+    from convvisual.receptive_field.convvisual import receptive_field_build_deconv_layers
     from braindecode.veganlasagne.layer_util import print_layers
     
     input_var = T.tensor4('inputs').astype(theano.config.floatX)
@@ -130,7 +130,7 @@ def test_dilation_layer():
     assert(np.array_equal(layer_activations2[3],layer_activations[3]))
 
 def test_inverse_dilation_layer():
-    from convvisual import receptive_field_build_deconv_layers
+    from convvisual.receptive_field.convvisual import receptive_field_build_deconv_layers
     from braindecode.veganlasagne.layer_util import print_layers
     
     input_var = T.tensor4('inputs').astype(theano.config.floatX)

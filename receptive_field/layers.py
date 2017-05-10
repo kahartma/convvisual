@@ -212,8 +212,8 @@ class ReversedPool2DLayer(lasagne.layers.TransposedConv2DLayer):
     Currently does not reverse mode used by original pooling layer (e.g. can't reverse max).
     Simply upscales original output to the size of the original input.
 
-    Important: Currently uses TransposedConv2DLayer for the implementation. Because of that
-    each filter is upscaled into all filters. Only use this if another convolutinal layer
+    CAREFUL: Currently uses TransposedConv2DLayer for the implementation. Because of that
+    each filter is upscaled into all filters. Only use this if another convolutional layer
     follows. Else you will receive incorrect values! Use with caution.
 
     For Arguments see lasagne.layers.Pool2DLayer
@@ -242,8 +242,8 @@ class ReversedPool2DLayer(lasagne.layers.TransposedConv2DLayer):
 
     def get_output_for(self, input, **kwargs):
         output = super(ReversedPool2DLayer, self).get_output_for(input, **kwargs)
-
-        output_shape = super(ReversedPool2DLayer, self).get_output_shape_for(input)
+        print input.shape,self.stride,self.crop
+        output_shape = super(ReversedPool2DLayer, self).get_output_shape_for(input.shape)
         conv_output_size = output_shape[2:]
 
 
@@ -268,7 +268,7 @@ class ReversedPool2DLayer(lasagne.layers.TransposedConv2DLayer):
         # Adaptation from lasagne.layers.TransposedConv2DLayer.convolve
         # had to change the way the output shape is determined
         border_mode = 'half' if self.crop == 'same' else self.crop
-        print "!!!W!!!",self.W.size
+
         op = T.nnet.abstract_conv.AbstractConv2d_gradInputs(
             imshp=self.conv_output_shape,
             kshp=self.get_W_shape(),
@@ -307,13 +307,14 @@ class ReversedConv2DLayer(lasagne.layers.TransposedConv2DLayer):
 
     For Arguments see lasagne.layers.Conv2DLayer
     """
-    def __init__(self, incoming, num_filters, pool_size,
+    def __init__(self, incoming, num_filters, filter_size,
                                 stride, pad, output_size,
                                 W=lasagne.init.Constant(1),
                                 flip_filters=False, mode='max',
                                 **kwargs):
+        self.filter_size = filter_size
         super(ReversedConv2DLayer, self).__init__(incoming, num_filters,
-                pool_size, stride=stride,
+                filter_size, stride=stride,
                 W=W, crop=pad, output_size=output_size,
                 flip_filters=flip_filters, **kwargs)
 

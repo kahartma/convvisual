@@ -1,0 +1,6 @@
+export SUBJECT=$SGE_TASK_ID
+
+cd /home/hartmank/braindecode
+source vienv/bin/activate
+cd convvisual/notebooks
+runipy Final_Create_RF_Data_Subject.ipynb out_notebooks/${SGE_TASK_ID}Final_Create_RF_Data_Subject.ipynb

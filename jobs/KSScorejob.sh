@@ -1,0 +1,4 @@
+cd /home/hartmank/braindecode
+source vienv/bin/activate
+cd convvisual/notebooks
+runipy 02_Signals_Mean_Signal_Variances.ipynb out_notebooks/20_02_Signals_Mean_Signal_Variances.ipynb

@@ -1,0 +1,4 @@
+cd /home/hartmank/braindecode
+source vienv/bin/activate
+cd convvisual/notebooks
+runipy 28_Filters_FeatureImagePlots.ipynb out_notebooks/28_Filters_FeatureImagePlots.ipynb

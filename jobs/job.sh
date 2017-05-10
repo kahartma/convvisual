@@ -1,0 +1,4 @@
+cd /home/hartmank/braindecode
+source vienv/bin/activate
+cd convvisual
+runipy 02_Create_RF_Data_All_Filters_TopInputs.ipynb out_notebooks/02_Create_RF_Data_All_Filters_TopInputs.ipynb

@@ -1,0 +1,4 @@
+cd /home/hartmank/braindecode
+source vienv/bin/activate
+cd convvisual/notebooks
+runipy 16_Make_RF_Data_AllFilters_NoClass.ipynb out_notebooks/16_OUT_16_Make_RF_Data_AllFilters_NoClass.ipynb

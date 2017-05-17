@@ -212,10 +212,6 @@ class ReversedPool2DLayer(lasagne.layers.TransposedConv2DLayer):
     Currently does not reverse mode used by original pooling layer (e.g. can't reverse max).
     Simply upscales original output to the size of the original input.
 
-    CAREFUL: Currently uses TransposedConv2DLayer for the implementation. Because of that
-    each filter is upscaled into all filters. Only use this if another convolutional layer
-    follows. Else you will receive incorrect values! Use with caution.
-
     For Arguments see lasagne.layers.Pool2DLayer
     """
     def __init__(self, incoming, num_filters, pool_size,
@@ -263,39 +259,30 @@ class ReversedPool2DLayer(lasagne.layers.TransposedConv2DLayer):
                         self.pool_output_size[0],self.pool_output_size[1])
 
         return return_shape
-    
+
     def convolve(self, input, **kwargs):
         # Adaptation from lasagne.layers.TransposedConv2DLayer.convolve
         # had to change the way the output shape is determined
-        border_mode = 'half' if self.crop == 'same' else self.crop
-
-        op = T.nnet.abstract_conv.AbstractConv2d_gradInputs(
-            imshp=self.conv_output_shape,
-            kshp=self.get_W_shape(),
-            subsample=self.stride, border_mode=border_mode,
-            filter_flip=not self.flip_filters)
-        output_size = self.conv_output_shape[2:]
-        conved = op(self.W, input, output_size)
-        return conved
-
-    def convolve2(self, input, **kwargs):
+        # Also iteration over weights, so do only convolution over 1 filter
         border_mode = 'half' if self.crop == 'same' else self.crop
         output_size = self.conv_output_shape[2:]
 
-        kshp = self.get_W_shape()
-        imshp = self.conv_output_shape
+        kshp = list(self.get_W_shape())
+        imshp = list(self.conv_output_shape)
         kshp[1] = 1
         imshp[1] = 1
         
-        conved = T.alloc(0, self.output_shape[0],self.output_shape[1],
-                                self.conv_output_shape[2],self.conv_output_shape[3])
-        for i in self.output_shape[1]:
+        conved = T.zeros((input.shape[0],input.shape[1],
+                                self.conv_output_shape[2],self.conv_output_shape[3]))
+        print conved.broadcastable
+        for i in range(self.output_shape[1]):
             op = T.nnet.abstract_conv.AbstractConv2d_gradInputs(
             imshp=imshp,
             kshp=kshp,
             subsample=self.stride, border_mode=border_mode,
             filter_flip=not self.flip_filters)
-            conved[:,i,:,:] = op(self.W[:,i,:,:], input[:,i,:,:], output_size)
+            tmp = op(self.W[:,i:i+1,:,:], input[:,i:i+1,:,:], output_size)
+            conved = T.set_subtensor(conved[:,i:i+1,:,:], tmp)
 
         return conved
 

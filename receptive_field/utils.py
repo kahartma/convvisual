@@ -1,21 +1,19 @@
+import convvisual.receptive_field.layers as layers
+from convvisual.receptive_field.layer_handlers import handle_switcher
+
 import numpy as np
 import theano
 import theano.tensor as T
 import lasagne
-import convvisual.receptive_field.layers as layers
 import braindecode
 from braindecode.veganlasagne import batch_norm
 from braindecode.veganlasagne.layers import create_pred_fn
 
-def init_theano(switch_cpu=False):
-    import os
-    assert 'THEANO_FLAGS' in os.environ
-    # in case you want to switch to cpu, to be able to use more than one notebook
-    if switch_cpu:
-        os.environ['THEANO_FLAGS'] = 'floatX=float32,device=cpu,nvcc.fastmath=True'
 
 
-def receptive_field_build_deconv_layers(top_layer,last_layer,use_learned_W=False,X_reshape=None):
+
+
+def receptive_field_build_deconv_layers(top_layer,last_layer,n_filters=None,  **kwargs):
     """Create network structure for calculating receptive fields of units in a certain layer.
 
     Parameters
@@ -30,129 +28,24 @@ def receptive_field_build_deconv_layers(top_layer,last_layer,use_learned_W=False
     RF_layer: Output layer in which the RF lies (e.g. instead of original input layer)
 
     """
-    
-    def handle_conv2d(l_in, l_original):
-        W = l_original.W if use_learned_W else lasagne.init.Constant(1)
-        #b = l_original.b if use_learned_W else lasagne.init.Constant(0)
-
-        l_deconv = layers.ReversedConv2DLayer(l_in, l_original.input_shape[1],
-                                                l_original.filter_size, l_original.stride,
-                                                l_original.pad,
-                                                (l_original.input_shape[2],l_original.input_shape[3]),
-                                                W=W, flip_filters=not l_original.flip_filters)
-
-        return l_deconv
-
-    def handle_pool2d(l_in, l_original):
-        l_upscale = layers.ReversedPool2DLayer(l_in,l_original.input_shape[1],
-                                                        l_original.pool_size, l_original.stride,
-                                                        l_original.pad, l_original.ignore_border, (l_original.input_shape[2],l_original.input_shape[3]))
-
-        return l_upscale
-
-    def handle_dimshuffle(l_in, l_original):
-        pattern = l_original.pattern
-        assert(len(pattern)==len(l_original.input_shape))
-
-        reverse_pattern = np.zeros(len(pattern))
-        for p in np.arange(len(pattern)):
-            ind = np.where(pattern==p)
-            assert(len(ind)==1)
-            reverse_pattern[p] = ind[0]
-
-        reverse_pattern = list(reverse_pattern.astype(int))
-        l_reverse = lasagne.layers.DimshuffleLayer(l_in, reverse_pattern)
-        return l_reverse
-
-    def handle_reshape(l_in, l_original):
-        shape = l_original.input_shape
-        shape_new = list()
-        for i in range(len(shape)):
-            if shape[i]==None:
-                shape_new.append([i])
-            else:
-                shape_new.append(shape[i])
-
-        l_reshape = lasagne.layers.ReshapeLayer(l_in, shape_new)
-
-        return l_reshape
-
-    def handle_dummy(l_in, l_original):
-        #dummy function for layers that do not change size or
-        #have any other effect on potential receptive field
-        l_dummy = layers.Dummy2DLayer(l_in)
-
-        return l_dummy
-    
-    def handle_final_reshape(l_in, l_original):
-        if l_original.flatten:
-            raise Exception("No inverse for flattening supported. Set flattening to false and add another ReshapeLayer.")
-            
-        orig_in_shape = l_original.input_shape
-        orig_out_shape = l_original.output_shape
-        B = orig_in_shape[0]
-        F = orig_in_shape[1]
-        R = orig_in_shape[2]
-        C = orig_in_shape[3]
-        
-        RX = orig_out_shape[2]
-            
-        X = np.ceil(RX/float(R))
-        
-        if X_reshape is not None:
-            X = X_reshape
-            
-        block_shape = [int(X),1]
-        paddings = [[0,int(R*X-RX)],[0,0]]
-        
-        l = layers.ReversedFinalReshapeLayer(l_in, block_shape, paddings,
-                                             l_original.remove_invalids, l_original.flatten,
-                                             fill_value=0)
-        return l
-    
-    def handle_stride_reshape(l_in, l_original):
-        X = l_original.n_stride
-        
-        orig_in_shape = l_original.input_shape
-        orig_out_shape = l_original.output_shape
-        B = orig_in_shape[0]
-        F = orig_in_shape[1]
-        R = orig_in_shape[2]
-        C = orig_in_shape[3]
-        
-        RP = orig_out_shape[2]*float(X)
-        P = RP-R
-                
-        l = layers.DilationMerge2DLayer(l_in,(X,1),((0,int(P)),(0,0)))
-        
-        return l
-    
     #backwards operations for different types of layers
-    switcher = {
-        lasagne.layers.conv.Conv2DLayer: handle_conv2d,
-        braindecode.veganlasagne.layers.Conv2DAllColsLayer: handle_conv2d, #should work because AllColls simply calls Conv2DLayer
-        lasagne.layers.pool.Pool2DLayer: handle_pool2d,
-        lasagne.layers.DimshuffleLayer: handle_dimshuffle,
-        lasagne.layers.ReshapeLayer: handle_reshape,
-        lasagne.layers.BatchNormLayer: handle_dummy,
-        lasagne.layers.DropoutLayer: handle_dummy,
-        lasagne.layers.NonlinearityLayer: handle_dummy,
-        braindecode.veganlasagne.layers.FinalReshapeLayer: handle_final_reshape,
-        braindecode.veganlasagne.layers.StrideReshapeLayer: handle_stride_reshape,
-        batch_norm.BatchNormLayer: handle_dummy
-    }
+    switcher = handle_switcher()
     
     #Get all layers from the output layer we want RF from and exclude original input layer
     lower_layers = lasagne.layers.get_all_layers(top_layer,treat_as_input=[last_layer])
 
-    l_in = lasagne.layers.InputLayer(top_layer.output_shape) #Replace output layer for RF with new input layer
+    shape = list(top_layer.output_shape)
+    if n_filters is not None:
+        shape[1] = n_filters
+
+    l_in = lasagne.layers.InputLayer(shape) #Replace output layer for RF with new input layer
     RF_layer = l_in
     #Go backwards through all layers and apply corresponding backwards operation
     for curr_layer in lower_layers[::-1]:
         layer_type =  type(curr_layer)
         func = switcher.get(layer_type)
-        RF_layer = func(RF_layer,curr_layer)
-        assert np.array_equal(RF_layer.output_shape,curr_layer.input_shape),"Something went wrong here"
+        RF_layer = func(RF_layer,curr_layer, n_filters=n_filters, **kwargs)
+        #assert np.array_equal(RF_layer.output_shape,curr_layer.input_shape),"Something went wrong here"
         
     return RF_layer
 

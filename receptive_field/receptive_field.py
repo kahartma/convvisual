@@ -1,10 +1,11 @@
+from convvisual.receptive_field.utils import *
+
 import lasagne
 import pickle
 import joblib
 import os
 from braindecode.experiments.load import load_exp_and_model
 from braindecode.veganlasagne.layers import create_pred_fn
-from convvisual.receptive_field.convvisual import *
 import sys
 import gc
 

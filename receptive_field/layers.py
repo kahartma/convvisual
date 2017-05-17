@@ -2,7 +2,6 @@ import lasagne
 import numpy as np
 import theano.tensor as T
 import theano
-import layers
 from theano.tensor.nnet.abstract_conv import get_conv_output_shape
 
 def pad_tensor4D(tensor,paddings,fill_value=0):
@@ -238,7 +237,7 @@ class ReversedPool2DLayer(lasagne.layers.TransposedConv2DLayer):
 
     def get_output_for(self, input, **kwargs):
         output = super(ReversedPool2DLayer, self).get_output_for(input, **kwargs)
-        print input.shape,self.stride,self.crop
+
         output_shape = super(ReversedPool2DLayer, self).get_output_shape_for(input.shape)
         conv_output_size = output_shape[2:]
 
@@ -274,7 +273,7 @@ class ReversedPool2DLayer(lasagne.layers.TransposedConv2DLayer):
         
         conved = T.zeros((input.shape[0],input.shape[1],
                                 self.conv_output_shape[2],self.conv_output_shape[3]))
-        print conved.broadcastable
+
         for i in range(self.output_shape[1]):
             op = T.nnet.abstract_conv.AbstractConv2d_gradInputs(
             imshp=imshp,

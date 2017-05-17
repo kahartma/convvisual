@@ -2,7 +2,7 @@ import numpy as np
 import theano
 import theano.tensor as T
 import lasagne
-import layers
+import convvisual.receptive_field.layers as layers
 import braindecode
 from braindecode.veganlasagne import batch_norm
 from braindecode.veganlasagne.layers import create_pred_fn
@@ -157,8 +157,16 @@ def receptive_field_build_deconv_layers(top_layer,last_layer,use_learned_W=False
     return RF_layer
 
 def get_receptive_field_mask(Units,l_RF,combined_units=False):
-    """
+    """Get receptive field of the specified units.
+    Only works for 4D layers
 
+    Units: Active units in input layer of l_RF (Nx4) Input|Filter|X|Y
+    l_RF: Receptive field layer (original input layer)
+    combined_units: Separate receptive fields for each unit or combined for all (default: False)
+
+    Returns:
+    RF_output: Activation of units in the receptive field layer.
+                Activation > 0: unit lies in receptive field
     """
     bot_layer = l_RF
     top_layer = lasagne.layers.get_all_layers(l_RF)[0]
@@ -176,32 +184,53 @@ def get_receptive_field_mask(Units,l_RF,combined_units=False):
 
     In_Units = np.zeros((n_Units,
                     top_layer.shape[1],top_layer.shape[2],top_layer.shape[3]),
-                    dtype=np.uint8)
+                    dtype=np.float32)
     In_Units[in_indcs,Units[:,0],Units[:,1],Units[:,2]] = 1
 
     assert np.array_equal(top_layer.shape[1:],In_Units.shape[1:]),"Weird"
 
     pred_fn = create_pred_fn(bot_layer)
-    RF_output = pred_fn(In_Units).astype(np.float32)
-    print 'UnitOut',RF_output.sum()
+    RF_output = pred_fn(In_Units)
 
     return RF_output
 
-def get_receptive_field_masked_inputs(Input,Units,l_RF,weighted=False):
+def get_receptive_field_masked_inputs(Inputs,Units,l_RF,fill_value=np.nan):
+    """Get input that activated a unit and only keep the values in its receptive field.
+
+    Inputs: Inputs that were used to calculated unit activations
+    Units: Active units in input layer of l_RF (Nx4) Input|Filter|X|Y
+    l_RF: Receptive field layer (original input layer)
+    fill_value: Value that is used for values not lying in the receptive field (default: NaN)
+
+    Returns:
+    X_RF_complete: Outputs size of the receptive field layer
+    mask: Mask for the receptive fields of the units in receptive field layer
+    """
     mask = get_receptive_field_mask(Units,l_RF)
     mask = mask>0
 
-    Input = Input[Units[:,0],:,:,:]
-    X_RF_complete = np.empty(Input.shape,dtype=np.float32)
-    X_RF_complete[:] = np.nan
-    
+    Inputs = Inputs[Units[:,0],:,:,:]
+    X_RF_complete = np.empty(Input.shape)
+    X_RF_complete[:] = fill_value
     X_RF = Input[mask]
     X_RF_complete[mask] = X_RF.flatten()
 
     return X_RF_complete,mask
 
-def get_most_active_units_in_layer(Input,layers,layer_ind,filter,n_units=None,unique=True,abs_act=True):
-    from braindecode.veganlasagne.layers import create_pred_fn
+def get_most_active_units_in_layer(Inputs,layers,layer_ind,filter,n_units=None,unique=True,abs_act=False):
+    """Get most active (sorted) units in specific layer for inputs.
+
+    Inputs: Inputs to calculate unit activations with
+    layers: Complete list of network layers
+    layer_ind: Index in layers in which unit activation should be computed
+    filter: Specific filter(s) in which the units are. If None: All filters in layer
+    n_Units: Number of most active units. If None: all units sorted (default: None)
+    unique: If only the most active Unit for each input should be kept. (default: True)
+    abs_act: If absolute unit activity should be used. (default: False)
+
+    Returns:
+    Most active units (Nx4) Input|Filter|X|Y
+    """
 
     if layers is not list:
         layers = lasagne.layers.get_all_layers(layers)
@@ -209,43 +238,64 @@ def get_most_active_units_in_layer(Input,layers,layer_ind,filter,n_units=None,un
         filter = np.arange(layers[layer_ind].output_shape[1])
 
     pred_fn = create_pred_fn(layers)
-    output = pred_fn(Input).astype(float16)
+    output = pred_fn(Inputs)
 
     return get_most_active_units_in_layer_from_output(output,layer_ind,filter,n_units=n_units,unique=unique,abs_act=abs_act)
 
 
-def get_most_active_units_in_layer_from_output(output,layer_ind,filter,n_units=None,unique=True,abs_act=True):
-    if type(output) is list:
-        output = np.copy(output[layer_ind])
+def get_most_active_units_in_layer_from_output(Outputs,layer_ind,filter,n_units=None,unique=True,abs_act=False):
+    """Get most active (sorted) units in specific layer from already computed outputs.
 
-    assert (len(output.shape)==4)
+    Outputs: Outputs to get the most active units from. Can be list of outputs (for all layers)
+    layers: Complete list of network layers
+    layer_ind: Index in layers in which unit activation should be computed
+    filter: Specific filter(s) in which the units are. If None: All filters in layer
+    n_Units: Number of most active units. If None: all units sorted (default: None)
+    unique: If only the most active Unit for each input should be kept. (default: True)
+    abs_act: If absolute unit activity should be used. (default: False)
+
+    Returns:
+    Most active units (Nx4) Input|Filter|X|Y
+    """
+
+    if type(Outputs) is list:
+        Outputs = np.copy(Outputs[layer_ind])
+
+    assert (len(Outputs.shape)==4)
 
     if abs_act:
-        output = abs(output)
+        Outputs = abs(Outputs)
 
-    mask = np.ones(output.shape,dtype=np.uint8)
+    mask = np.ones(Outputs.shape)
     mask[:,filter,:,:] = 0
-    output[mask==1] = 0
+    Outputs[mask==1] = 0
     del mask
 
-    #output_l_flat = output.flatten()
-
-    #output_sorted = output_l_flat.argsort()[::-1]
-    output_sorted = output.argsort(axis=None)[::-1]
-    output_sorted_ind = np.unravel_index(output_sorted,output.shape)
+    output_sorted = Outputs.argsort(axis=None)[::-1]
+    output_sorted_ind = np.unravel_index(output_sorted,Outputs.shape)
     unique_ind = np.arange(len(output_sorted_ind[0]))
     if unique:
         a,unique_ind = np.unique(output_sorted_ind[0],return_index=True)
         unique_ind = sorted(unique_ind)
 
     if n_units==None:
-        n_units = len(output_sorted_ind)
-    output_sorted_ind = np.asarray(output_sorted_ind,dtype=np.float16).T
-    Units = output_sorted_ind[unique_ind[:n_units*2],:]
+        n_units = len(max_act)
+    output_sorted_ind = np.asarray(output_sorted_ind).T
+    Units = output_sorted_ind[unique_ind[:n_units],:]
 
     return Units
 
 def check_if_finalreshape_is_needed(model,layer_ind):
+    """Checks if there is an unmerged occurence of braindecode.veganlasagne.layers.StrideReshapeLayer
+    If so adds an instance of braindecode.veganlasagne.layers.FinalReshapeLayer at the end of the network.
+
+    model: Network model
+    layer_ind: Until which layer of the mode should be checked (new output layer)
+
+    Returns:
+    model: Model with FinalReshapeLayer if needed. New output layer is layer_ind or layer_ind+1 (if added layer)
+    layer_ind: New output layer index
+    """
     if model is not list:
         model = lasagne.layers.get_all_layers(model)
         
